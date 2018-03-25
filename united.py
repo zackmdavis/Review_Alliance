@@ -172,6 +172,10 @@ def decode_multihot_categories(index_map, category_vector):
             categories.append(index_map[i])
     return categories
 
+def decode_actual_categories(reviewvec):
+    return decode_multihot_categories(reviewvec.index_categories,
+                                      reviewvec.category_vector)
+
 
 def predict_categories(training, testing):
     model = KNeighborsClassifier()
@@ -187,7 +191,7 @@ def predict_categories(training, testing):
     testing_vectors = [rv.vector for rv in testing]
     testing_multihot = numpy.array([rv.category_vector for rv in testing])
 
-    print(model.score(testing_vectors, testing_multihot))
+    print("score:", model.score(testing_vectors, testing_multihot))
 
     return model
 
@@ -205,9 +209,18 @@ def predict_stars(training, testing):
 
 
 if __name__ == "__main__":
-    rvs = grab_reviewvecs(500)
+    rvs = grab_reviewvecs(1000)
     assign_category_vectors(rvs)
-    cat_model = predict_categories(rvs[:300], rvs[-200:])
+    cat_model = predict_categories(rvs[:900], rvs[-100:])
+
+    for rv, prediction in zip(rvs[-100:],
+                              cat_model.predict([rv.vector
+                                                 for rv in rvs[-100:]])):
+        print("review text: {!r}".format(rv.text))
+        print("predicted categories:",
+              decode_multihot_categories(rv.index_categories, prediction))
+        print("actual categories:", decode_actual_categories(rv))
+        print("———")
 
     # drop into an IPython shell for exploration
     IPython.embed()
