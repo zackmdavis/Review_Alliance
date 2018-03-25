@@ -5,6 +5,7 @@ import pycld2
 import IPython
 import matplotlib.pyplot as plot
 import spacy
+import numpy
 from matplotlib.colors import ListedColormap
 from mpl_toolkits.mplot3d import Axes3D
 from sklearn.decomposition import PCA
@@ -13,6 +14,8 @@ from sqlalchemy import (Column, ForeignKey, Integer, MetaData, String, Table,
 from sqlalchemy.ext.automap import automap_base
 from sqlalchemy.orm import Session
 from spacy_cld import LanguageDetector
+from sklearn.linear_model import Ridge
+from sklearn.neighbors import KNeighborsClassifier
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s • %(levelname)s—%(message)s")
@@ -136,12 +139,75 @@ def plot_by_stars(reviewvecs):
     plot.show()
 
 
+def assign_category_vectors(reviewvecs):
+    categories = set()
+    for reviewvec in reviewvecs:
+        categories |= set(reviewvec.categories)
+
+    category_indices = {}
+    index_categories = {}
+    category_list = []
+    for category in categories:
+        index = len(category_list)
+        category_indices[category] = index
+        index_categories[index] = category
+        category_list.append(category)
+
+    for reviewvec in reviewvecs:
+        category_vector = [0 for _ in range(len(category_list))]
+        for category in reviewvec.categories:
+            index = category_indices[category]
+            category_vector[index] = 1
+        reviewvec.category_vector = category_vector
+        # make this accessible for legibility
+        # XXX: there must be a better way to do this
+        reviewvec.category_indices = category_indices
+        reviewvec.index_categories = index_categories
+
+
+def decode_multihot_categories(index_map, category_vector):
+    categories = []
+    for i, spot in enumerate(category_vector):
+        if spot:  # hot!
+            categories.append(index_map[i])
+    return categories
+
+
+def predict_categories(training, testing):
+    model = KNeighborsClassifier()
+
+    training_vectors = [rv.vector for rv in training]
+    # workaround for
+    # https://www.mail-archive.com/scikit-learn@python.org/msg02076.html I
+    # guess??
+    training_multihot = numpy.array([rv.category_vector for rv in training])
+
+    model.fit(training_vectors, training_multihot)
+
+    testing_vectors = [rv.vector for rv in testing]
+    testing_multihot = numpy.array([rv.category_vector for rv in testing])
+
+    print(model.score(testing_vectors, testing_multihot))
+
+    return model
+
+
+def predict_stars(training, testing):
+    model = Ridge()
+    training_vectors = [rv.vector for rv in training]
+    training_stars = [rv.stars for rv in training]
+    model.fit(training_vectors, training_stars)
+    testing_vectors = [rv.vector for rv in testing]
+    testing_stars = [rv.stars for rv in testing]
+    score = model.score(testing_vectors, testing_stars)
+    print(score) # R²≈0.32, meh
+    return model
+
+
 if __name__ == "__main__":
-    rvs = grab_reviewvecs(2500)
-    reduce_reviewvec_dimensionality(rvs)
-    rvs_by_1st = sorted(rvs, key=lambda rv: rv.vector[0])
-    rvs_by_2nd = sorted(rvs, key=lambda rv: rv.vector[1])
-    rvs_by_3rd = sorted(rvs, key=lambda rv: rv.vector[2])
+    rvs = grab_reviewvecs(500)
+    assign_category_vectors(rvs)
+    cat_model = predict_categories(rvs[:300], rvs[-200:])
 
     # drop into an IPython shell for exploration
     IPython.embed()
